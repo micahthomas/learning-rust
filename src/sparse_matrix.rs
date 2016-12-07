@@ -39,10 +39,20 @@ pub struct SparseMatrix {
     cols: i32,
     num_of_points: i32,
     sorted: bool,
+    /// keeps track whether there are unnecessary zeros
     clean: bool,
 }
 
 impl SparseMatrix {
+    /// Constructs a new `SparseMatrix`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use graphs::sparse_matrix::SparseMatrix;
+    ///
+    /// let sparse_matrix = SparseMatrix::new();
+    /// ```
     pub fn new() -> SparseMatrix {
         return SparseMatrix {
             list: Vec::new(),
@@ -54,6 +64,18 @@ impl SparseMatrix {
         };
     }
 
+    pub fn with_capcaity(size: i32) -> SparseMatrix {
+        return SparseMatrix {
+            list: Vec::with_capacity(size as usize),
+            rows: 0,
+            cols: 0,
+            num_of_points: 0,
+            sorted: true,
+            clean: true,
+        };
+    }
+
+    /// Adds a coordinate to the vecotr
     fn add_point(&mut self, row: i32, col: i32, value: f32) {
         if row > self.rows {
             self.rows = row;
@@ -64,6 +86,7 @@ impl SparseMatrix {
         }
 
         match self.list.last() {
+            /// if there is a last_element, might have to change sorted or clean flags
             Some(last_element) => {
                 if row < last_element.row || (row == last_element.row && col < last_element.col) {
                     self.sorted = false;
@@ -71,6 +94,7 @@ impl SparseMatrix {
                     self.clean = false;
                 }
             }
+            /// if there is no element, no need to change the sorted or clean flags
             None => {}
         }
 
@@ -83,6 +107,7 @@ impl SparseMatrix {
         self.num_of_points += 1;
     }
 
+    /// makes sure that the vector of matrix elements are sorted
     fn ensure_sorted(&mut self) {
         if !self.sorted {
             self.list.sort();
@@ -90,6 +115,7 @@ impl SparseMatrix {
         }
     }
 
+    /// makes sure that there are no unnecessary zeros
     fn ensure_clean(&mut self) {
         if !self.clean {
             self.clean_zeros();
@@ -97,6 +123,19 @@ impl SparseMatrix {
         }
     }
 
+    /// Sets the value at a row and column to the specified value
+    ///
+    /// Changes the value of an existing point in the matrix if a corresponding
+    /// point is found, otherwise adds a new point to the matrix
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use graphs::sparse_matrix::SparseMatrix;
+    ///
+    /// let mut sparse_matrix = SparseMatrix::new();
+    /// sparse_matrix.set_value_at_coordinate(1, 1, 2.2);
+    /// ```
     pub fn set_value_at_coordinate(&mut self, row: i32, col: i32, value: f32) {
         self.ensure_sorted();
 
@@ -112,6 +151,18 @@ impl SparseMatrix {
         }
     }
 
+    /// Gets the value at a row and column
+    ///
+    /// Gets the value of a row and column, if no corresponding entry is found,
+    /// the function will return zero
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use graphs::sparse_matrix::SparseMatrix;
+    ///
+    /// let mut sparse_matrix = SparseMatrix::new();
+    /// sparse_matrix.set_value_at_coordinate(1, 1, 2.2);
     pub fn get_value_at_coordinate(&mut self, row: i32, col: i32) -> f32 {
         self.ensure_sorted();
 
@@ -144,6 +195,35 @@ impl SparseMatrix {
         self.list = list_copy;
     }
 
+    fn get_list_of_rows(&self) -> Vec<i32> {
+        let mut rows: Vec<i32> = self.list.clone().into_iter().map(|element| element.row).collect();
+        rows.dedup();
+        return rows;
+    }
+
+    fn get_list_of_cols(&self) -> Vec<i32> {
+        let mut cols: Vec<i32> = self.list.clone().into_iter().map(|element| element.col).collect();
+        cols.dedup();
+        return cols;
+    }
+
+    fn get_row(&self, row: i32) -> Vec<MatrixElement> {
+        return self.list
+            .clone()
+            .into_iter()
+            .filter(|element| element.row == row)
+            .collect();
+    }
+
+    fn get_col(&self, col: i32) -> Vec<MatrixElement> {
+        return self.list
+            .clone()
+            .into_iter()
+            .filter(|element| element.col == col)
+            .collect();
+
+    }
+
     pub fn matrix_multiplication(&mut self, matrix_a: &mut SparseMatrix) -> Option<SparseMatrix> {
         if self.rows != matrix_a.cols {
             return None;
@@ -155,32 +235,32 @@ impl SparseMatrix {
         matrix_a.ensure_sorted();
 
 
-        let mut result = SparseMatrix::new();
+        let mut result = SparseMatrix::with_capcaity((matrix_a.get_number_of_points() +
+                                                      self.get_number_of_points()) /
+                                                     2);
         result.rows = self.rows;
         result.cols = matrix_a.cols;
-        let mut rows: Vec<i32> = self.list.clone().into_iter().map(|element| element.row).collect();
-        let mut cols: Vec<i32> =
-            matrix_a.list.clone().into_iter().map(|element| element.col).collect();
-        rows.dedup();
-        cols.dedup();
+
+        let rows = self.get_list_of_rows();
+        let cols = matrix_a.get_list_of_cols();
 
         // O(x^2 * n^2), where x, n is num of elements in self and matrix_a respectively
         // much better than O(self.rows * matrix_a.cols * matrix_a.rows)
-        for row in rows.iter() {
-            for col in cols.iter() {
+        for row in &rows {
+            for col in &cols {
                 let mut sum = 0.0;
-                for cols_in_row_self in self.list
-                    .clone()
-                    .into_iter()
-                    .filter(|element| element.row == *row) {
-                    for rows_in_col_matrix_a in
-                        matrix_a.list.clone().into_iter().filter(|element| element.col == *col) {
-                        if cols_in_row_self.col == rows_in_col_matrix_a.row {
-                            sum += cols_in_row_self.value * rows_in_col_matrix_a.value;
+                let self_row = self.get_row(*row);
+                let matrix_a_col = matrix_a.get_col(*col);
+                for self_element in &self_row {
+                    for matrix_a_element in &matrix_a_col {
+                        if self_element.col == matrix_a_element.row {
+                            sum += self_element.value * matrix_a_element.value;
                         }
                     }
                 }
-                result.set_value_at_coordinate(*row, *col, sum);
+                if sum != 0.0 {
+                    result.set_value_at_coordinate(*row, *col, sum);
+                }
             }
         }
 
