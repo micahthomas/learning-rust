@@ -208,20 +208,23 @@ impl SparseMatrix {
     }
 
     fn get_row(&self, row: i32) -> Vec<MatrixElement> {
-        return self.list
+        let mut row: Vec<MatrixElement> = self.list
             .clone()
             .into_iter()
             .filter(|element| element.row == row)
             .collect();
+        row.sort();
+        return row;
     }
 
     fn get_col(&self, col: i32) -> Vec<MatrixElement> {
-        return self.list
+        let mut col: Vec<MatrixElement> = self.list
             .clone()
             .into_iter()
             .filter(|element| element.col == col)
             .collect();
-
+        col.sort();
+        return col;
     }
 
     pub fn matrix_multiplication(&mut self, matrix_a: &mut SparseMatrix) -> Option<SparseMatrix> {
@@ -244,17 +247,34 @@ impl SparseMatrix {
         let rows = self.get_list_of_rows();
         let cols = matrix_a.get_list_of_cols();
 
-        // O(x^2 * n^2), where x, n is num of elements in self and matrix_a respectively
+        // O(x^2 * log(n)), where x, n is num of elements in self and matrix_a respectively
         // much better than O(self.rows * matrix_a.cols * matrix_a.rows)
         for row in &rows {
             for col in &cols {
                 let mut sum = 0.0;
+
+                // get the corresponding row (vector of all points with matching row)
                 let self_row = self.get_row(*row);
+                // get the corresponding col
                 let matrix_a_col = matrix_a.get_col(*col);
-                for self_element in &self_row {
+
+                // do the dot product
+                if self_row.len() > matrix_a_col.len() {
+                    for self_element in &self_row {
+                        match matrix_a_col.binary_search_by(|element| element.col.cmp(&self_element.row)) {
+                            Ok(index) => {
+                                sum += self_element.value * matrix_a_col[index].value;
+                            },
+                            Err(_) => {}
+                        }
+                    }
+                } else {
                     for matrix_a_element in &matrix_a_col {
-                        if self_element.col == matrix_a_element.row {
-                            sum += self_element.value * matrix_a_element.value;
+                        match self_row.binary_search_by(|element| element.row.cmp(&matrix_a_element.col)) {
+                            Ok(index) => {
+                                sum += matrix_a_element.value * self_row[index].value;
+                            },
+                            Err(_) => {}
                         }
                     }
                 }
